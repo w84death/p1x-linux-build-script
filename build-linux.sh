@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # ******************************************************************************
 # P1X LiNUX BUiLD SCRiPT - 2018.06
 # ******************************************************************************
@@ -11,13 +11,22 @@
 
 SCRIPT_NAME="P1X LiNUX BUiLD SCRiPT"
 SCRIPT_VERSION="2018.6"
-DISTRIBUTION_VERSION="1.0 RC6"
+DISTRIBUTION_VERSION="1.0 RC7"
 KERNEL_VERSION=4.12.3
 BUSYBOX_VERSION=1.27.1
 SYSLINUX_VERSION=6.03
-ROOT_DIR=`realpath --no-symlinks $PWD`
-PAGES="6"
+NCURSES_VERSION=6.0
+NANO_VERSION="2.8.7"
+
+BASEDIR=`realpath --no-symlinks $PWD`
+SOURCEDIR=${BASEDIR}/sources
+DESTDIR=${BASEDIR}/rootfs
+ISODIR=${BASEDIR}/iso
+
+
 DIALOG_OUT=/tmp/dialog_$$
+CFLAGS="-Os -s -fno-stack-protector -fomit-frame-pointer -U_FORTIFY_SOURCE"
+CPU_CORES=4
 
 # ******************************************************************************
 # FUNCTIONS
@@ -26,15 +35,17 @@ DIALOG_OUT=/tmp/dialog_$$
 show_menu() {
         dialog --backtitle "$SCRIPT_NAME - $SCRIPT_VERSION / v$DISTRIBUTION_VERSION" \
                 --title "$SCRIPT_NAME MENU" \
-                --menu "To create a new distro run from 1 to 5. Then you can run it in QEMU or burn ISO file. Choose wisely:" 16 64 8 \
-                1 "GET SOURCES" \
-                2 "PREPARE DIRECTORIES" \
+                --menu "Run each step in order. Choose wisely:" 20 64 10 \
+                1 "PREPARE DIRECTORIES" \
+                2 "GET SOURCES" \
                 3 "BUILD BUSYBOX" \
-                4 "BUILD KERNEL" \
-                5 "MAKE ISO IMAGE" \
-                6 "RUN QEMU" \
-                7 "CLEAN FILES" \
-                8 "QUIT" 2> $DIALOG_OUT
+                4 "BUILD EXTRAS" \
+                5 "MAKE ROOTFS" \
+                6 "BUILD KERNEL" \
+                7 "MAKE ISO IMAGE" \
+                8 "RUN QEMU" \
+                9 "CLEAN FILES" \
+                10 "QUIT" 2> $DIALOG_OUT
 }
 
 show_dialog() {
@@ -50,46 +61,50 @@ ask_dialog() {
                 --yesno "$2" 12 48
 }
 
+
 get_sources() {
+        cd $SOURCEDIR
         wget -O kernel.tar.xz http://kernel.org/pub/linux/kernel/v4.x/linux-$KERNEL_VERSION.tar.xz
         wget -O busybox.tar.bz2 http://busybox.net/downloads/busybox-$BUSYBOX_VERSION.tar.bz2
         wget -O syslinux.tar.xz http://kernel.org/pub/linux/utils/boot/syslinux/syslinux-$SYSLINUX_VERSION.tar.xz
+        wget -O ncurses.tar.gz https://ftp.gnu.org/pub/gnu/ncurses/ncurses-$NCURSES_VERSION.tar.gz
+        wget -O nano.tar.xz https://nano-editor.org/dist/v2.8/nano-$NANO_VERSION.tar.xz
         tar -xvf kernel.tar.xz
         tar -xvf busybox.tar.bz2
         tar -xvf syslinux.tar.xz
+        tar -xvf ncurses.tar.gz
+        tar -xvf nano.tar.xz
 }
 
 prepare_dirs() {
-        if [ ! -d "isoimage" ]; then
-                mkdir isoimage
+        if [ ! -d "$SOURCEDIR" ]; then
+                mkdir $SOURCEDIR
+        fi
+        if [ ! -d "$DESTDIR" ]; then
+                mkdir $DESTDIR
+                mkdir -p ${DESTDIR}/{bin,boot,dev,etc,home,lib,media,mnt,proc,root,sys,tmp,var}
+                mkdir -p ${DESTDIR}/dev/{pts,input,net,usb}
+                mkdir -p ${DESTDIR}/usr/{bin,include,local,lib,share}
+                mkdir -p ${DESTDIR}/var/{cache,lib,local,log,run,spool}
+                chmod 1777 ${DESTDIR}/tmp
+        fi
+        if [ ! -d "$ISODIR" ]; then
+                mkdir $ISODIR
         fi
 }
 
 build_busybox() {
-        cd $ROOT_DIR/busybox-$BUSYBOX_VERSION
+        cd $SOURCEDIR/busybox-$BUSYBOX_VERSION
         make distclean defconfig
         sed -i "s/.*CONFIG_STATIC.*/CONFIG_STATIC=y/" .config
-        make busybox install
+        make CONFIG_PREFIX=${DESTDIR} install
 
-        INSTALL_ROOT="$ROOT_DIR/busybox-$BUSYBOX_VERSION/_install"
-        cd "$INSTALL_ROOT"
+        cd "$DESTDIR"
+        chmod 4755 bin/busybox
         rm -f linuxrc
+        ln -sf bin/busybox init
 
-        mkdir "$INSTALL_ROOT/etc"
-        mkdir "$INSTALL_ROOT/tmp"
-        mkdir "$INSTALL_ROOT/proc"
-        mkdir "$INSTALL_ROOT/sys"
-        mkdir "$INSTALL_ROOT/dev"
-        mkdir "$INSTALL_ROOT/home"
-        mkdir "$INSTALL_ROOT/mnt"
-        mkdir "$INSTALL_ROOT/var"
-        mkdir "$INSTALL_ROOT/root"
-        chmod a+rwxt "$INSTALL_ROOT/tmp"
-        ln -s usr/bin "$INSTALL_ROOT/bin"
-        ln -s usr/sbin "$INSTALL_ROOT/sbin"
-        ln -s usr/lib "$INSTALL_ROOT/lib"
-
-        cat > "$INSTALL_ROOT"/init << 'EOF' &&
+        cat > "$DESTDIR"/init << 'EOF' &&
 #!/bin/sh
 dmesg -n 1
 export HOME=/home
@@ -97,67 +112,123 @@ export PATH=/bin:/sbin
 mountpoint -q proc || mount -t proc proc proc
 mountpoint -q sys || mount -t sysfs sys sys
 /bin/sh
-umount /sys /proc
 EOF
-        chmod +x "$INSTALL_ROOT"/init
+        chmod +x "$DESTDIR"/init
 
-        cat > "$INSTALL_ROOT"/etc/passwd << 'EOF' &&
+        cat > "$DESTDIR"/etc/passwd << 'EOF' &&
 root::0:0:root:/home/root:/bin/sh
 guest:x:500:500:guest:/home/guest:/bin/sh
 nobody:x:65534:65534:nobody:/proc/self:/dev/null
 EOF
 
-        cat > "$INSTALL_ROOT"/etc/group << 'EOF' &&
+        cat > "$DESTDIR"/etc/group << 'EOF' &&
 root:x:0:
 guest:x:500:
 EOF
+        echo "done"
+}
 
-        find . | cpio -R root:root -H newc -o | gzip > $ROOT_DIR/isoimage/rootfs.gz
+build_extras () {
+        build_ncurses
+        build_nano
+}
+
+build_ncurses () {
+        cd $SOURCEDIR/ncourses-$NCURSES_VERSION
+        if [ -f Makefile ] ; then
+                make -j $CPU_CORES clean
+        fi
+        sed -i '/LIBTOOL_INSTALL/d' c++/Makefile.in
+        CFLAGS="$CFLAGS" ./configure \
+                --prefix=/usr \
+                --with-termlib \
+                --with-terminfo-dirs=/lib/terminfo \
+                --with-default-terminfo-dirs=/lib/terminfo \
+                --without-normal \
+                --without-debug \
+                --without-cxx-binding \
+                --with-abi-version=5 \
+                --enable-widec \
+                --enable-pc-files \
+                --with-shared \
+                CPPFLAGS=-I$PWD/ncurses/widechar \
+                LDFLAGS=-L$PWD/lib \
+                CPPFLAGS="-P"
+
+        make -j $CPU_CORES
+        make -j $CPU_CORES install DESTDIR=$DESTDIR
+
+        cd $DESTDIR/usr/lib
+        ln -s libncursesw.so.5 libncurses.so.5
+        ln -s libncurses.so.5 libncurses.so
+        ln -s libtinfow.so.5 libtinfo.so.5
+        ln -s libtinfo.so.5 libtinfo.so
+        #strip -g $DESTDIR/usr/bin/*
+}
+
+build_nano () {
+        cd $SOURCEDIR/nano-$NANO_VERSION
+        if [ -f Makefile ] ; then
+                make -j $CPU_CORES clean
+        fi
+        sed -i '/LIBTOOL_INSTALL/d' c++/Makefile.in
+        CFLAGS="$CFLAGS" ./configure \
+                --prefix=/usr \
+                LDFLAGS=-L$DESTDIR/usr/include
+
+        make -j $CPU_CORES
+        make -j $CPU_CORES install DESTDIR=$DESTDIR
+
+        #strip -g $DESTDIR/usr/bin/*
+}
+
+make_rootfs () {
+        cd $DESTDIR
+        find . -print | cpio -R root:root -o -H newc | gzip -9 > ${ISODIR}/rootfs.gz
 }
 
 build_kernel() {
-        cd $ROOT_DIR/linux-$KERNEL_VERSION
-        make mrproper -j 4
-        make defconfig -j 4
+        cd $SOURCEDIR/linux-$KERNEL_VERSION
+        make mrproper -j $CPU_CORES
+        make defconfig -j $CPU_CORES
         sed -i "s/.*CONFIG_DEFAULT_HOSTNAME.*/CONFIG_DEFAULT_HOSTNAME=\"P1X\"/" .config
         sed -i "s/.*CONFIG_OVERLAY_FS.*/CONFIG_OVERLAY_FS=y/" .config
         sed -i "s/.*\\(CONFIG_KERNEL_.*\\)=y/\\#\\ \\1 is not set/" .config
         sed -i "s/.*CONFIG_KERNEL_XZ.*/CONFIG_KERNEL_XZ=y/" .config
         sed -i "s/.*CONFIG_FB_VESA.*/CONFIG_FB_VESA=y/" .config
-        sed -i "s/.*CONFIG_LOGO.*/CONFIG_LOGO=y/" .config
-        cp $ROOT_DIR/logo.ppm drivers/video/logo/logo_linux_clut224.ppm
+        #sed -i "s/.*CONFIG_LOGO.*/CONFIG_LOGO=y/" .config
+        cp $BASEDIR/logo.ppm drivers/video/logo/logo_linux_clut224.ppm
         sed -i "s/.*CONFIG_LOGO_LINUX_CLUT224.*/CONFIG_LOGO_LINUX_CLUT224=y/" .config
         sed -i "s/.*LOGO_LINUX_CLUT224.*/LOGO_LINUX_CLUT224=y/" .config
-        sed -i "s/^CONFIG_DEBUG_KERNEL.*/\\# CONFIG_DEBUG_KERNEL is not set/" .config
+        #sed -i "s/^CONFIG_DEBUG_KERNEL.*/\\# CONFIG_DEBUG_KERNEL is not set/" .config
 
-        make bzImage -j 4
-        cp arch/x86/boot/bzImage $ROOT_DIR/isoimage/kernel.gz
+        make bzImage -j $CPU_CORES
+        cp arch/x86/boot/bzImage $ISODIR/kernel.gz
 }
 
 make_isoimage() {
-        cd $ROOT_DIR/isoimage
-        cp ../syslinux-$SYSLINUX_VERSION/bios/core/isolinux.bin .
-        cp ../syslinux-$SYSLINUX_VERSION/bios/com32/elflink/ldlinux/ldlinux.c32 .
-        cat > ./isolinux.cfg << 'EOF' &&
-DEFAULT p1x
-PROMPT 1
-TIMEOUT 50
+        cd $ISODIR
+        SYSLINUX_DIR="$SOURCEDIR/syslinux-$SYSLINUX_VERSION"
+        cp $SYSLINUX_DIR/bios/core/isolinux.bin .
+        cp $SYSLINUX_DIR/bios/com32/elflink/ldlinux/ldlinux.c32 .
+        cp $SYSLINUX_DIR/bios/com32/libutil/libutil.c32 .
+        cp $SYSLINUX_DIR/bios/com32/menu/menu.c32 .
 
-SAY
-SAY   ##################################################################
-SAY   #                                                                #
-SAY   #  Press <ENTER> to boot P1X LiNUX or wait 5 seconds.            #
-SAY   #                                                                #
-SAY   ##################################################################
-SAY
+        cat > ./isolinux.cfg << 'EOF' &&
+UI menu.c32
+PROMPT 0
+
+MENU TITLE P1X LiNUX 2018.6:
+    TIMEOUT 60
+    DEFAULT p1x
 
 LABEL p1x
-        MENU LABEL P1X LiNUX 4.12.3 (800x600)
+        MENU LABEL P1X LiNUX 4.12.3
         KERNEL kernel.gz
-        APPEND initrd=rootfs.gz vga=h
+        APPEND initrd=rootfs.gz vga=791 quiet
 
-LABEL p1x_ask
-        MENU LABEL P1X LiNUX 4.12.3 (nomodeset, ask)
+LABEL p1x_vga
+        MENU LABEL P1X LiNUX 4.12.3 (choose resolution)
         KERNEL kernel.gz
         APPEND initrd=rootfs.gz vga=ask nomodeset
 EOF
@@ -175,34 +246,76 @@ EOF
 }
 
 clean () {
-        rm -rf busybox* isoimage kernel* linux* syslinux*
+        rm -rf $SOURCEDIR $DESTDIR $ISODIR
+}
+
+# ******************************************************************************
+# SCRIPT MENU
+# ******************************************************************************
+
+menu_prepare_dirs () {
+        show_dialog "REPARE DIRECTORIES" "Create nessesary directories."
+        prepare_dirs && menu_get_sources
 }
 
 menu_get_sources () {
-        if ask_dialog "GET SOURCES" "Download Linux, Busybox, Syslinux?";
+        if ask_dialog "GET SOURCES" "Download sources for Linux, Busybox, Syslinux, ncourses, nano?";
         then
-                get_sources && menu_prepare_dirs
+                get_sources && menu_build_busybox
         else
                 loop_menu
         fi
 }
 
-menu_prepare_dirs () {
-        show_dialog "REPARE DIRECTORIES" "Create nessesary directories."
-        prepare_dirs && menu_build_busybox
-}
-
 menu_build_busybox () {
+        if [ ! -d $SOURCEDIR/busybox-$BUSYBOX_VERSION ];
+        then
+                show_dialog "MISSING FILES" "Busybox files are missing" && loop_menu
+        fi
+
         if ask_dialog "BUILD BUSYBOX" "Start building Busybox?";
         then
-                build_busybox && menu_build_kernel
+                build_busybox && menu_build_extras
+        else
+                loop_menu
+        fi
+}
+
+menu_build_extras () {
+        if [ ! -d $SOURCEDIR/nano-$NANO_VERSION ];
+        then
+                show_dialog "MISSING FILES" "Nano files are missing" && loop_menu
+        fi
+
+        if [ ! -d $SOURCEDIR/ncurses-$NCURSES_VERSION ];
+        then
+                show_dialog "MISSING FILES" "nCurses files are missing" && loop_menu
+        fi
+
+        if ask_dialog "BUILD EXTRAS" "Start building ncurses, nano?";
+        then
+                build_extras && menu_make_rootfs
+        else
+                loop_menu
+        fi
+}
+
+menu_make_rootfs () {
+        if [ ! -f $DESTDIR/init ];
+        then
+                show_dialog "MISSING FILES" "Rootfs init file is missing" && loop_menu
+        fi
+        if ask_dialog "MAKE ROOTFS" "Start making rootfs?";
+        then
+                make_rootfs && menu_build_kernel
         else
                 loop_menu
         fi
 }
 
 menu_build_kernel () {
-        if ask_dialog "BUILD KERNEL" "Start building Linux Kernel?"; then
+        if ask_dialog "BUILD KERNEL" "Start building Linux Kernel?";
+        then
                 build_kernel && menu_make_iso
         else
                 loop_menu
@@ -210,15 +323,16 @@ menu_build_kernel () {
 }
 
 menu_make_iso () {
-        if ask_dialog "MAKE ISO IMAGE" "Make final image?"; then
-                make_isoimage && show_dialog "[6/$PAGES] FINISHED" "P1X LiNUX is created :)\nBurn p1x_linux_live.iso and enjoy the distribution!"
+        if ask_dialog "MAKE ISO IMAGE" "Make final image?";
+        then
+                make_isoimage && show_dialog "FINISHED" "P1X LiNUX is created :)\nBurn p1x_linux_live.iso or run qemu from menu and enjoy the distribution!" && loop_menu
         else
                 loop_menu
         fi
 }
 
 menu_qemu () {
-        qemu-system-x86_64 -m 128M -cdrom p1x_linux_live.iso -boot d -vga std & loop_menu
+        qemu-system-x86_64 -m 128M -cdrom p1x_linux_live.iso -boot d -vga std && loop_menu
 }
 
 menu_clean () {
@@ -235,23 +349,28 @@ loop_menu () {
         choice=$(cat $DIALOG_OUT)
 
         case $choice in
-                1) menu_get_sources ;;
+                1) menu_prepare_dirs ;;
 
-                2) menu_prepare_dirs ;;
+                2) menu_get_sources ;;
 
                 3) menu_build_busybox ;;
 
-                4) menu_build_kernel ;;
+                4) menu_build_extras ;;
 
-                5) menu_make_iso ;;
+                5) menu_make_rootfs ;;
 
-                6) menu_qemu ;;
+                6) menu_build_kernel ;;
 
-                7) menu_clean ;;
+                7) menu_make_iso ;;
 
-                8) exit;;
+                8) menu_qemu ;;
+
+                9) menu_clean ;;
+
+                10) exit;;
         esac
 }
+
 # ******************************************************************************
 # THE SCRIPT
 # ******************************************************************************
