@@ -3,7 +3,7 @@
 # P1X LiNUX BUiLD SCRiPT - 2018.06
 # ******************************************************************************
 
-set -ex
+# set -ex
 
 # ******************************************************************************
 # GLOBALS
@@ -11,16 +11,31 @@ set -ex
 
 SCRIPT_NAME="P1X LiNUX BUiLD SCRiPT"
 SCRIPT_VERSION="2018.6"
-DISTRIBUTION_VERSION="1.0 RC4"
+DISTRIBUTION_VERSION="1.0 RC5"
 KERNEL_VERSION=4.12.3
 BUSYBOX_VERSION=1.27.1
 SYSLINUX_VERSION=6.03
 ROOT_DIR=`realpath --no-symlinks $PWD`
 PAGES="6"
+DIALOG_OUT=/tmp/dialog_$$
 
 # ******************************************************************************
 # FUNCTIONS
 # ******************************************************************************
+
+show_menu() {
+        dialog --backtitle "$SCRIPT_NAME - $SCRIPT_VERSION / v$DISTRIBUTION_VERSION" \
+                --title "$SCRIPT_NAME MENU" \
+                --menu "To create a new distro run from 1 to 5. Then you can run it in QEMU or burn ISO file. Choose wisely:" 16 64 8 \
+                1 "GET SOURCES" \
+                2 "PREPARE DIRECTORIES" \
+                3 "BUILD BUSYBOX" \
+                4 "BUILD KERNEL" \
+                5 "MAKE ISO IMAGE" \
+                6 "RUN QEMU" \
+                7 "CLEAN FILES" \
+                8 "QUIT" 2> $DIALOG_OUT
+}
 
 show_dialog() {
 	dialog --backtitle "$SCRIPT_NAME - $SCRIPT_VERSION / v$DISTRIBUTION_VERSION" \
@@ -124,9 +139,9 @@ make_isoimage() {
         cp ../syslinux-$SYSLINUX_VERSION/bios/core/isolinux.bin .
         cp ../syslinux-$SYSLINUX_VERSION/bios/com32/elflink/ldlinux/ldlinux.c32 .
         cat > ./isolinux.cfg << 'EOF' &&
+DEFAULT p1x
 PROMPT 1
 TIMEOUT 50
-DEFAULT p1x
 
 SAY
 SAY   ##################################################################
@@ -161,43 +176,89 @@ EOF
 
 clean () {
         rm -rf busybox* isoimage kernel* linux* syslinux*
-        echo "YOU WERE USING \\e[1mP1X \\e[32mLiNUX BUiLD SCRiPT \\e[31m2018.6\\e[0m, Visit http://linux.p1x.in"
 }
 
+menu_get_sources () {
+        if ask_dialog "GET SOURCES" "Download Linux, Busybox, Syslinux?";
+        then
+                get_sources && menu_prepare_dirs
+        else
+                loop_menu
+        fi
+}
+
+menu_prepare_dirs () {
+        show_dialog "REPARE DIRECTORIES" "Create nessesary directories."
+        prepare_dirs && menu_build_busybox
+}
+
+menu_build_busybox () {
+        if ask_dialog "BUILD BUSYBOX" "Start building Busybox?";
+        then
+                build_busybox && menu_build_kernel
+        else
+                loop_menu
+        fi
+}
+
+menu_build_kernel () {
+        if ask_dialog "BUILD KERNEL" "Start building Linux Kernel?"; then
+                build_kernel && menu_make_iso
+        else
+                loop_menu
+        fi
+}
+
+menu_make_iso () {
+        if ask_dialog "MAKE ISO IMAGE" "Make final image?"; then
+                make_isoimage && show_dialog "[6/$PAGES] FINISHED" "P1X LiNUX is created :)\nBurn p1x_linux_live.iso and enjoy the distribution!"
+        else
+                loop_menu
+        fi
+}
+
+menu_qemu () {
+        qemu-system-x86_64 -m 128M -cdrom p1x_linux_live.iso -boot d -vga std & loop_menu
+}
+
+menu_clean () {
+        if ask_dialog "CLEAN FILES" "Remove all downloaded and compiled files?"; then
+                clean && loop_menu
+        else
+                loop_menu
+        fi
+}
+
+loop_menu () {
+        show_menu
+        cat $DIALOG_OUT
+        choice=$(cat $DIALOG_OUT)
+
+        case $choice in
+                1) menu_get_sources ;;
+
+                2) menu_prepare_dirs ;;
+
+                3) menu_build_busybox ;;
+
+                4) menu_build_kernel ;;
+
+                5) menu_make_iso ;;
+
+                6) menu_qemu ;;
+
+                7) menu_clean ;;
+
+                8) exit;;
+        esac
+}
 # ******************************************************************************
 # THE SCRIPT
 # ******************************************************************************
 
+loop_menu
 
-if ! ask_dialog "[0/$PAGES] WELCOME" \
- "Welcome. Create your own Linux distribution from one script file!\n\nScript is divided into parts: GETTING SOURCES, PREPARING DIRECTORIES, BUILD BUSYBOX, BUILD KERNEL, MAKE ISO IMAGE\n\nStart now?"; then
-        return 0
-else
-        if ask_dialog "[1/$PAGES] GETTING SOURCES" "Download Linux, Busybox, Syslinux?"; then
-                get_sources
-        fi
-
-        show_dialog "[2/$PAGES] PREPARING DIRECTORIES" "Create nessesary directories."
-        prepare_dirs
-
-        if ask_dialog "[3/$PAGES] BUILD BUSYBOX" "Start building Busybox?"; then
-                build_busybox
-        fi
-
-        if ask_dialog "[4/$PAGES] BUILD KERNEL" "Start building Linux Kernel?"; then
-                build_kernel
-        fi
-
-        if ask_dialog "[5/$PAGES] MAKE ISO IMAGE" "Make final image?"; then
-                make_isoimage
-        fi
-
-        show_dialog "[6/$PAGES] FINISHED" "P1X LiNUX is created :)\nBurn p1x_linux_live.iso and enjoy the distribution!"
-
-        #clean
-fi
-
-set +ex
+# set +ex
 
 # ******************************************************************************
 # EOF
