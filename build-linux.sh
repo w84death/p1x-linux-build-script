@@ -11,7 +11,7 @@ set -ex
 
 SCRIPT_NAME="P1X LiNUX BUiLD SCRiPT"
 SCRIPT_VERSION="2018.6"
-DISTRIBUTION_VERSION="1.0 RC3"
+DISTRIBUTION_VERSION="1.0 RC4"
 KERNEL_VERSION=4.12.3
 BUSYBOX_VERSION=1.27.1
 SYSLINUX_VERSION=6.03
@@ -124,11 +124,27 @@ make_isoimage() {
         cp ../syslinux-$SYSLINUX_VERSION/bios/core/isolinux.bin .
         cp ../syslinux-$SYSLINUX_VERSION/bios/com32/elflink/ldlinux/ldlinux.c32 .
         cat > ./isolinux.cfg << 'EOF' &&
- DEFAULT linux
-  SAY Now booting the kernel from SYSLINUX...
- LABEL linux
-  KERNEL kernel.gz
-  APPEND initrd=rootfs.gz vga=791
+PROMPT 1
+TIMEOUT 50
+DEFAULT p1x
+
+SAY
+SAY   ##################################################################
+SAY   #                                                                #
+SAY   #  Press <ENTER> to boot P1X LiNUX or wait 5 seconds.            #
+SAY   #                                                                #
+SAY   ##################################################################
+SAY
+
+LABEL p1x
+        MENU LABEL P1X LiNUX 4.12.3 (800x600)
+        KERNEL kernel.gz
+        APPEND initrd=rootfs.gz vga=h
+
+LABEL p1x_ask
+        MENU LABEL P1X LiNUX 4.12.3 (nomodeset, ask)
+        KERNEL kernel.gz
+        APPEND initrd=rootfs.gz vga=ask nomodeset
 EOF
 
         xorriso \
