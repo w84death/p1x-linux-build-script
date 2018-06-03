@@ -11,7 +11,7 @@ set -ex
 
 SCRIPT_NAME="P1X LiNUX BUiLD SCRiPT"
 SCRIPT_VERSION="2018.6"
-DISTRIBUTION_VERSION="1.0 RC2"
+DISTRIBUTION_VERSION="1.0 RC3"
 KERNEL_VERSION=4.12.3
 BUSYBOX_VERSION=1.27.1
 SYSLINUX_VERSION=6.03
@@ -79,10 +79,10 @@ build_busybox() {
 dmesg -n 1
 export HOME=/home
 export PATH=/bin:/sbin
-mount -t devtmpfs none /dev
-mount -t proc none /proc
-mount -t sysfs none /sys
-setsid cttyhack /bin/sh
+mountpoint -q proc || mount -t proc proc proc
+mountpoint -q sys || mount -t sysfs sys sys
+/bin/sh
+umount /sys /proc
 EOF
         chmod +x "$INSTALL_ROOT"/init
 
@@ -109,6 +109,7 @@ build_kernel() {
         sed -i "s/.*\\(CONFIG_KERNEL_.*\\)=y/\\#\\ \\1 is not set/" .config
         sed -i "s/.*CONFIG_KERNEL_XZ.*/CONFIG_KERNEL_XZ=y/" .config
         sed -i "s/.*CONFIG_FB_VESA.*/CONFIG_FB_VESA=y/" .config
+        sed -i "s/.*CONFIG_LOGO.*/CONFIG_LOGO=y/" .config
         cp $ROOT_DIR/logo.ppm drivers/video/logo/logo_linux_clut224.ppm
         sed -i "s/.*CONFIG_LOGO_LINUX_CLUT224.*/CONFIG_LOGO_LINUX_CLUT224=y/" .config
         sed -i "s/.*LOGO_LINUX_CLUT224.*/LOGO_LINUX_CLUT224=y/" .config
@@ -122,7 +123,13 @@ make_isoimage() {
         cd $ROOT_DIR/isoimage
         cp ../syslinux-$SYSLINUX_VERSION/bios/core/isolinux.bin .
         cp ../syslinux-$SYSLINUX_VERSION/bios/com32/elflink/ldlinux/ldlinux.c32 .
-        echo 'default kernel.gz initrd=rootfs.gz' > ./isolinux.cfg
+        cat > ./isolinux.cfg << 'EOF' &&
+ DEFAULT linux
+  SAY Now booting the kernel from SYSLINUX...
+ LABEL linux
+  KERNEL kernel.gz
+  APPEND initrd=rootfs.gz vga=791
+EOF
 
         xorriso \
           -as mkisofs \
