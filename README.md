@@ -1,4 +1,4 @@
-# P1X LiNUX BUiLD SCRiPT
+# ![P1X LiNUX BUiLD SCRiPT](https://i.imgur.com/5V4a2qE.png)
 
 Based on [Minimal Linux Script](https://github.com/ivandavidov/minimal-linux-script) and [Minimal Linux Live](http://github.com/ivandavidov/minimal).
 
@@ -7,7 +7,7 @@ The script below uses **Linux kernel 4.7.6**, **BusyBox 1.24.2** and **Syslinux 
 
 For Debian/Ubuntu you'll need
 
-    sudo apt-get install wget bc build-essential gawk xorriso
+    sudo apt-get install wget bc build-essential gawk xorriso dialog
 
 Then just run the script
 
