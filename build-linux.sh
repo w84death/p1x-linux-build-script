@@ -11,6 +11,7 @@ set -ex
 
 SCRIPT_NAME="P1X LiNUX BUiLD SCRiPT"
 SCRIPT_VERSION="2018.6"
+DISTRIBUTION_VERSION="1.0 RC2"
 KERNEL_VERSION=4.12.3
 BUSYBOX_VERSION=1.27.1
 SYSLINUX_VERSION=6.03
@@ -22,14 +23,14 @@ PAGES="6"
 # ******************************************************************************
 
 show_dialog() {
-	dialog --backtitle "$SCRIPT_NAME - $SCRIPT_VERSION" \
+	dialog --backtitle "$SCRIPT_NAME - $SCRIPT_VERSION / v$DISTRIBUTION_VERSION" \
 		--title "$1" \
 		--msgbox "$2" 12 48
 }
 
 ask_dialog() {
         dialog --stdout \
-                --backtitle "$SCRIPT_NAME - $SCRIPT_VERSION" \
+                --backtitle "$SCRIPT_NAME - $SCRIPT_VERSION / v$DISTRIBUTION_VERSION" \
                 --title "$1" \
                 --yesno "$2" 12 48
 }
@@ -54,32 +55,64 @@ build_busybox() {
         make distclean defconfig
         sed -i "s/.*CONFIG_STATIC.*/CONFIG_STATIC=y/" .config
         make busybox install
-        cd _install
+
+        INSTALL_ROOT="$ROOT_DIR/busybox-$BUSYBOX_VERSION/_install"
+        cd "$INSTALL_ROOT"
         rm -f linuxrc
-        mkdir dev proc sys
-        echo '#!/bin/sh' > init
-        echo 'dmesg -n 1' >> init
-        echo 'mount -t devtmpfs none /dev' >> init
-        echo 'mount -t proc none /proc' >> init
-        echo 'mount -t sysfs none /sys' >> init
-        echo 'setsid cttyhack /bin/sh' >> init
-        echo 'echo -e "\\e[1mP1X \\e[32mLiNUX BUiLD SCRiPT \\e[31m2018.6\\e[0m\nVisit http://linux.p1x.in\n"' >> init
-        chmod +x init
-        find . | cpio -R root:root -H newc -o | gzip > ../../isoimage/rootfs.gz
+
+        mkdir "$INSTALL_ROOT/etc"
+        mkdir "$INSTALL_ROOT/tmp"
+        mkdir "$INSTALL_ROOT/proc"
+        mkdir "$INSTALL_ROOT/sys"
+        mkdir "$INSTALL_ROOT/dev"
+        mkdir "$INSTALL_ROOT/home"
+        mkdir "$INSTALL_ROOT/mnt"
+        mkdir "$INSTALL_ROOT/var"
+        mkdir "$INSTALL_ROOT/root"
+        chmod a+rwxt "$INSTALL_ROOT/tmp"
+        ln -s usr/bin "$INSTALL_ROOT/bin"
+        ln -s usr/sbin "$INSTALL_ROOT/sbin"
+        ln -s usr/lib "$INSTALL_ROOT/lib"
+
+        cat > "$INSTALL_ROOT"/init << 'EOF' &&
+#!/bin/sh
+dmesg -n 1
+export HOME=/home
+export PATH=/bin:/sbin
+mount -t devtmpfs none /dev
+mount -t proc none /proc
+mount -t sysfs none /sys
+setsid cttyhack /bin/sh
+EOF
+        chmod +x "$INSTALL_ROOT"/init
+
+        cat > "$INSTALL_ROOT"/etc/passwd << 'EOF' &&
+root::0:0:root:/home/root:/bin/sh
+guest:x:500:500:guest:/home/guest:/bin/sh
+nobody:x:65534:65534:nobody:/proc/self:/dev/null
+EOF
+
+        cat > "$INSTALL_ROOT"/etc/group << 'EOF' &&
+root:x:0:
+guest:x:500:
+EOF
+
+        find . | cpio -R root:root -H newc -o | gzip > $ROOT_DIR/isoimage/rootfs.gz
 }
 
 build_kernel() {
         cd $ROOT_DIR/linux-$KERNEL_VERSION
         make mrproper -j 4
         make defconfig -j 4
-
-        sed -i "s/.*CONFIG_DEFAULT_HOSTNAME.*/CONFIG_DEFAULT_HOSTNAME=\"p1x\"/" .config
-        echo "CONFIG_OVERLAY_FS_REDIRECT_DIR=y" >> .config
+        sed -i "s/.*CONFIG_DEFAULT_HOSTNAME.*/CONFIG_DEFAULT_HOSTNAME=\"P1X\"/" .config
+        sed -i "s/.*CONFIG_OVERLAY_FS.*/CONFIG_OVERLAY_FS=y/" .config
         sed -i "s/.*\\(CONFIG_KERNEL_.*\\)=y/\\#\\ \\1 is not set/" .config
         sed -i "s/.*CONFIG_KERNEL_XZ.*/CONFIG_KERNEL_XZ=y/" .config
         sed -i "s/.*CONFIG_FB_VESA.*/CONFIG_FB_VESA=y/" .config
         cp $ROOT_DIR/logo.ppm drivers/video/logo/logo_linux_clut224.ppm
         sed -i "s/.*CONFIG_LOGO_LINUX_CLUT224.*/CONFIG_LOGO_LINUX_CLUT224=y/" .config
+        sed -i "s/.*LOGO_LINUX_CLUT224.*/LOGO_LINUX_CLUT224=y/" .config
+        sed -i "s/^CONFIG_DEBUG_KERNEL.*/\\# CONFIG_DEBUG_KERNEL is not set/" .config
 
         make bzImage -j 4
         cp arch/x86/boot/bzImage $ROOT_DIR/isoimage/kernel.gz
@@ -112,7 +145,9 @@ clean () {
 # THE SCRIPT
 # ******************************************************************************
 
-if ! ask_dialog "[0/$PAGES] P1X LiNUX BUiLD SCRiPT 2018.6" "Create your own Linux distribution from one script file!\n\nStart now?"; then
+
+if ! ask_dialog "[0/$PAGES] WELCOME" \
+ "Welcome. Create your own Linux distribution from one script file!\n\nScript is divided into parts: GETTING SOURCES, PREPARING DIRECTORIES, BUILD BUSYBOX, BUILD KERNEL, MAKE ISO IMAGE\n\nStart now?"; then
         return 0
 else
         if ask_dialog "[1/$PAGES] GETTING SOURCES" "Download Linux, Busybox, Syslinux?"; then
@@ -138,6 +173,7 @@ else
 
         #clean
 fi
+
 set +ex
 
 # ******************************************************************************
