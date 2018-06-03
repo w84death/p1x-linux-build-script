@@ -1,4 +1,4 @@
-# ![P1X LiNUX BUiLD SCRiPT](https://i.imgur.com/5V4a2qE.png)
+# ![P1X LiNUX BUiLD SCRiPT](media/banner.png)
 
 Based on [Minimal Linux Script](https://github.com/ivandavidov/minimal-linux-script) and [Minimal Linux Live](http://github.com/ivandavidov/minimal).
 
