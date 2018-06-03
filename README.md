@@ -3,6 +3,7 @@
 ## About
 
 This scripts generates working Linux ISO image (7.8MiB). It is very, very small and basic.
+The script below uses **Linux kernel 4.7.6**, **BusyBox 1.24.2** and **Syslinux 6.03**.
 
 ## Media
 
@@ -14,7 +15,7 @@ This scripts generates working Linux ISO image (7.8MiB). It is very, very small 
 
 Based on [Minimal Linux Script](https://github.com/ivandavidov/minimal-linux-script) and [Minimal Linux Live](http://github.com/ivandavidov/minimal).
 
-The script below uses **Linux kernel 4.7.6**, **BusyBox 1.24.2** and **Syslinux 6.03**.
+## Usage
 
 For Debian/Ubuntu you'll need
 
