@@ -15,6 +15,7 @@ KERNEL_VERSION=4.12.3
 BUSYBOX_VERSION=1.27.1
 SYSLINUX_VERSION=6.03
 ROOT_DIR=`realpath --no-symlinks $PWD`
+PAGES="6"
 
 # ******************************************************************************
 # FUNCTIONS
@@ -26,10 +27,11 @@ show_dialog() {
 		--msgbox "$2" 12 48
 }
 
-clear_stuff () {
-        if [ -d "isoimage" ]; then
-            rm -rf isoimage
-        fi
+ask_dialog() {
+        dialog --stdout \
+                --backtitle "$SCRIPT_NAME - $SCRIPT_VERSION" \
+                --title "$1" \
+                --yesno "$2" 12 48
 }
 
 get_sources() {
@@ -42,7 +44,9 @@ get_sources() {
 }
 
 prepare_dirs() {
-        mkdir isoimage
+        if [ ! -d "isoimage" ]; then
+                mkdir isoimage
+        fi
 }
 
 build_busybox() {
@@ -74,11 +78,11 @@ build_kernel() {
         sed -i "s/.*\\(CONFIG_KERNEL_.*\\)=y/\\#\\ \\1 is not set/" .config
         sed -i "s/.*CONFIG_KERNEL_XZ.*/CONFIG_KERNEL_XZ=y/" .config
         sed -i "s/.*CONFIG_FB_VESA.*/CONFIG_FB_VESA=y/" .config
-        cp ../logo.ppm drivers/video/logo/logo_linux_clut224.ppm
+        cp $ROOT_DIR/logo.ppm drivers/video/logo/logo_linux_clut224.ppm
         sed -i "s/.*CONFIG_LOGO_LINUX_CLUT224.*/CONFIG_LOGO_LINUX_CLUT224=y/" .config
 
         make bzImage -j 4
-        cp arch/x86/boot/bzImage ../isoimage/kernel.gz
+        cp arch/x86/boot/bzImage $ROOT_DIR/isoimage/kernel.gz
 }
 
 make_isoimage() {
@@ -100,7 +104,7 @@ make_isoimage() {
 }
 
 clean () {
-        rm -rf busybox* isoimage kernel* linux* *.iso syslinux*
+        rm -rf busybox* isoimage kernel* linux* syslinux*
         echo "YOU WERE USING \\e[1mP1X \\e[32mLiNUX BUiLD SCRiPT \\e[31m2018.6\\e[0m, Visit http://linux.p1x.in"
 }
 
@@ -108,29 +112,32 @@ clean () {
 # THE SCRIPT
 # ******************************************************************************
 
-clear_stuff
+if ! ask_dialog "[0/$PAGES] P1X LiNUX BUiLD SCRiPT 2018.6" "Create your own Linux distribution from one script file!\n\nStart now?"; then
+        return 0
+else
+        if ask_dialog "[1/$PAGES] GETTING SOURCES" "Download Linux, Busybox, Syslinux?"; then
+                get_sources
+        fi
 
-show_dialog "Welcome!" "P1X LiNUX BUiLD SCRiPT 2018.6\nCreate your own Linux distribution from one script file!\n\nStart now."
+        show_dialog "[2/$PAGES] PREPARING DIRECTORIES" "Create nessesary directories."
+        prepare_dirs
 
-show_dialog "GETTING SOURCES" "Download Linux, Busybox, Syslinux.\nThis may take a while.."
-get_sources
+        if ask_dialog "[3/$PAGES] BUILD BUSYBOX" "Start building Busybox?"; then
+                build_busybox
+        fi
 
-show_dialog "PREPARING DIRECTORIES" "Create nessesary directories."
-prepare_dirs
+        if ask_dialog "[4/$PAGES] BUILD KERNEL" "Start building Linux Kernel?"; then
+                build_kernel
+        fi
 
-show_dialog "BUILD BUSYBOX" "Start building Busybox.\nThis may take a while.."
-build_busybox
+        if ask_dialog "[5/$PAGES] MAKE ISO IMAGE" "Make final image?"; then
+                make_isoimage
+        fi
 
-show_dialog "BUILD KERNEL" "Start building Linux Kernel.\nThis will take a few minutes.."
-build_kernel
+        show_dialog "[6/$PAGES] FINISHED" "P1X LiNUX is created :)\nBurn p1x_linux_live.iso and enjoy the distribution!"
 
-show_dialog "MAKE ISO IMAGE" "Make final image."
-make_isoimage
-
-show_dialog "FINISHED" "P1X LiNUX is created :)\nBurn p1x_linux_live.iso and enjoy the distribution!"
-
-clean
-
+        #clean
+fi
 set +ex
 
 # ******************************************************************************
