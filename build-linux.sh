@@ -3,7 +3,7 @@
 # P1X LiNUX BUiLD SCRiPT - 2018.06
 # ******************************************************************************
 
-# set -ex
+set -ex
 
 # ******************************************************************************
 # GLOBALS
@@ -11,11 +11,11 @@
 
 SCRIPT_NAME="P1X LiNUX BUiLD SCRiPT"
 SCRIPT_VERSION="2018.6"
-DISTRIBUTION_VERSION="1.0 RC7"
-KERNEL_VERSION=4.12.3
-BUSYBOX_VERSION=1.27.1
-SYSLINUX_VERSION=6.03
-NCURSES_VERSION=6.0
+DISTRIBUTION_VERSION="1.0 RC8"
+KERNEL_VERSION="4.14.39"
+BUSYBOX_VERSION="1.28.3"
+SYSLINUX_VERSION="6.03"
+NCURSES_VERSION="6.0"
 NANO_VERSION="2.8.7"
 
 BASEDIR=`realpath --no-symlinks $PWD`
@@ -63,7 +63,7 @@ ask_dialog() {
 
 
 get_sources() {
-        cd $SOURCEDIR
+        cd ${SOURCEDIR}
         wget -O kernel.tar.xz http://kernel.org/pub/linux/kernel/v4.x/linux-$KERNEL_VERSION.tar.xz
         wget -O busybox.tar.bz2 http://busybox.net/downloads/busybox-$BUSYBOX_VERSION.tar.bz2
         wget -O syslinux.tar.xz http://kernel.org/pub/linux/utils/boot/syslinux/syslinux-$SYSLINUX_VERSION.tar.xz
@@ -77,53 +77,130 @@ get_sources() {
 }
 
 prepare_dirs() {
-        if [ ! -d "$SOURCEDIR" ]; then
-                mkdir $SOURCEDIR
+        if [ ! -d ${SOURCEDIR} ]; then
+                mkdir ${SOURCEDIR}
         fi
-        if [ ! -d "$DESTDIR" ]; then
-                mkdir $DESTDIR
+        if [ ! -d ${DESTDIR} ]; then
+                mkdir ${DESTDIR}
                 mkdir -p ${DESTDIR}/{bin,boot,dev,etc,home,lib,media,mnt,proc,root,sys,tmp,var}
                 mkdir -p ${DESTDIR}/dev/{pts,input,net,usb}
                 mkdir -p ${DESTDIR}/usr/{bin,include,local,lib,share}
                 mkdir -p ${DESTDIR}/var/{cache,lib,local,log,run,spool}
                 chmod 1777 ${DESTDIR}/tmp
         fi
-        if [ ! -d "$ISODIR" ]; then
-                mkdir $ISODIR
+        if [ ! -d ${ISODIR} ]; then
+                mkdir ${ISODIR}
         fi
 }
 
 build_busybox() {
-        cd $SOURCEDIR/busybox-$BUSYBOX_VERSION
+        cd ${SOURCEDIR}/busybox-$BUSYBOX_VERSION
         make distclean defconfig
         sed -i "s/.*CONFIG_STATIC.*/CONFIG_STATIC=y/" .config
         make CONFIG_PREFIX=${DESTDIR} install
-
-        cd "$DESTDIR"
+        cp examples/bootfloppy/mkdevs.sh ${DESTDIR}/bin
+        cd ${DESTDIR}
         chmod 4755 bin/busybox
         rm -f linuxrc
         ln -sf bin/busybox init
+        bin/mkdevs.sh ${DESTDIR}/dev
 
-        cat > "$DESTDIR"/init << 'EOF' &&
+        create_etc_files
+}
+
+create_etc_files () {
+        cat > ${DESTDIR}/etc/passwd << 'EOF' &&
+root:x:0:0:root:/root:/bin/sh
+EOF
+
+        cat > ${DESTDIR}/etc/group << 'EOF' &&
+root:x:0:root
+EOF
+
+        cat > ${DESTDIR}/etc/motd << 'EOF' &&
+*******************************
+* Welcome to P1X LiNUX 2018.6 *
+*******************************
+EOF
+
+        cat > ${DESTDIR}/etc/rc.boot << 'EOF' &&
 #!/bin/sh
 dmesg -n 1
-export HOME=/home
-export PATH=/bin:/sbin
-mountpoint -q proc || mount -t proc proc proc
-mountpoint -q sys || mount -t sysfs sys sys
-/bin/sh
+mount -t proc -o nosuid,noexec,nodev /proc /proc
+mount -t sysfs -o nosuid,noexec,nodev  /sys /sys
+mount -t devtmpfs /dev /dev
+mount -t devpts devpts /dev/pts
+mount -t tmpfs -o nosuid /tmp /tmp
+echo /sbin/mdev > /proc/sys/kernel/hotplug
+mdev -s
+export HOSTNAME=P1X
+mount -o remount,ro /
+fsck -A -T -C -p
+mount -o remount,rw /
+dmesg >/var/log/dmesg.log
 EOF
-        chmod +x "$DESTDIR"/init
 
-        cat > "$DESTDIR"/etc/passwd << 'EOF' &&
-root::0:0:root:/home/root:/bin/sh
-guest:x:500:500:guest:/home/guest:/bin/sh
-nobody:x:65534:65534:nobody:/proc/self:/dev/null
+        chmod +x ${DESTDIR}/etc/rc.boot
+
+        cat > ${DESTDIR}/etc/rc.shutdown << 'EOF' &&
+killall5 -s TERM
+sleep
+killall5 -s KILL
+umount -a
+sync
+EOF
+        chmod +x ${DESTDIR}/etc/rc.shutdown
+
+        cat > ${DESTDIR}/etc/profile  << 'EOF' &&
+# /etc/profile
+
+umask 022
+
+PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+LD_LIBRARY_PATH="/usr/lib:/lib"
+
+export PATH
+export LD_LIBRARY_PATH
 EOF
 
-        cat > "$DESTDIR"/etc/group << 'EOF' &&
-root:x:0:
-guest:x:500:
+        cat > ${DESTDIR}/etc/issue  << 'EOF' &&
+P1X LiNUX 2018.6
+EOF
+
+        cat > ${DESTDIR}/etc/inittab  << 'EOF' &&
+# /etc/inittab
+
+::sysinit:/etc/rc.boot
+
+tty1::respawn:/sbin/getty 38400 tty1
+tty2::respawn:/sbin/getty 38400 tty2
+tty3::respawn:/sbin/getty 38400 tty3
+tty4::respawn:/sbin/getty 38400 tty4
+tty5::respawn:/sbin/getty 38400 tty5
+tty6::respawn:/sbin/getty 38400 tty6
+
+::shutdown:/etc/rc.shutdown
+::ctrlaltdel:/sbin/reboot
+EOF
+
+
+        cat > ${DESTDIR}/etc/fstab  << 'EOF' &&
+#proc            /proc        proc    defaults          0       0
+#sysfs           /sys         sysfs   defaults          0       0
+#devpts          /dev/pts     devpts  defaults          0       0
+#tmpfs           /dev/shm     tmpfs   defaults          0       0
+EOF
+
+
+        cat > ${DESTDIR}/etc/securetty  << 'EOF' &&
+console
+ttyS0
+tty1
+tty2
+tty3
+tty4
+tty5
+tty6
 EOF
         echo "done"
 }
@@ -183,8 +260,9 @@ build_nano () {
 }
 
 make_rootfs () {
-        cd $DESTDIR
-        find . -print | cpio -R root:root -o -H newc | gzip -9 > ${ISODIR}/rootfs.gz
+        cd ${DESTDIR}
+        find . -print | cpio -o -H newc | gzip -9 > ${ISODIR}/rootfs.gz
+        #-R root:root
 }
 
 build_kernel() {
@@ -196,19 +274,19 @@ build_kernel() {
         sed -i "s/.*\\(CONFIG_KERNEL_.*\\)=y/\\#\\ \\1 is not set/" .config
         sed -i "s/.*CONFIG_KERNEL_XZ.*/CONFIG_KERNEL_XZ=y/" .config
         sed -i "s/.*CONFIG_FB_VESA.*/CONFIG_FB_VESA=y/" .config
-        #sed -i "s/.*CONFIG_LOGO.*/CONFIG_LOGO=y/" .config
         cp $BASEDIR/logo.ppm drivers/video/logo/logo_linux_clut224.ppm
         sed -i "s/.*CONFIG_LOGO_LINUX_CLUT224.*/CONFIG_LOGO_LINUX_CLUT224=y/" .config
         sed -i "s/.*LOGO_LINUX_CLUT224.*/LOGO_LINUX_CLUT224=y/" .config
         #sed -i "s/^CONFIG_DEBUG_KERNEL.*/\\# CONFIG_DEBUG_KERNEL is not set/" .config
 
         make bzImage -j $CPU_CORES
-        cp arch/x86/boot/bzImage $ISODIR/kernel.gz
+        make INSTALL_MOD_PATH=${DESTDIR} modules_install
+        cp arch/x86/boot/bzImage ${ISODIR}/bzImage
 }
 
 make_isoimage() {
-        cd $ISODIR
-        SYSLINUX_DIR="$SOURCEDIR/syslinux-$SYSLINUX_VERSION"
+        cd ${ISODIR}
+        SYSLINUX_DIR=${SOURCEDIR}/syslinux-${SYSLINUX_VERSION}
         cp $SYSLINUX_DIR/bios/core/isolinux.bin .
         cp $SYSLINUX_DIR/bios/com32/elflink/ldlinux/ldlinux.c32 .
         cp $SYSLINUX_DIR/bios/com32/libutil/libutil.c32 .
@@ -223,13 +301,13 @@ MENU TITLE P1X LiNUX 2018.6:
     DEFAULT p1x
 
 LABEL p1x
-        MENU LABEL P1X LiNUX 4.12.3
-        KERNEL kernel.gz
+        MENU LABEL P1X LiNUX 4.14.39
+        KERNEL bzImage
         APPEND initrd=rootfs.gz vga=791 quiet
 
-LABEL p1x_vga
-        MENU LABEL P1X LiNUX 4.12.3 (choose resolution)
-        KERNEL kernel.gz
+LABEL p1x_debug
+        MENU LABEL P1X LiNUX 4.14.39 (debug)
+        KERNEL bzImage
         APPEND initrd=rootfs.gz vga=ask nomodeset
 EOF
 
@@ -242,7 +320,7 @@ EOF
           -boot-load-size 4 \
           -boot-info-table \
           ./
-        cd ..
+        cd ${BASEDIR}
 }
 
 clean () {
@@ -345,7 +423,6 @@ menu_clean () {
 
 loop_menu () {
         show_menu
-        cat $DIALOG_OUT
         choice=$(cat $DIALOG_OUT)
 
         case $choice in
@@ -377,7 +454,7 @@ loop_menu () {
 
 loop_menu
 
-# set +ex
+set +ex
 
 # ******************************************************************************
 # EOF

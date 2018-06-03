@@ -3,7 +3,12 @@
 ## About
 
 This scripts generates working Linux ISO image (7.8MiB). It is very, very small and basic.
-The script below uses **Linux kernel 4.7.6**, **BusyBox 1.24.2** and **Syslinux 6.03**.
+
+The script below uses:
+
+- **Linux kernel 4.14.39**
+- **BusyBox 1.28.3**
+- **Syslinux 6.03**
 
 ## Linux
 
@@ -13,8 +18,6 @@ The script below uses **Linux kernel 4.7.6**, **BusyBox 1.24.2** and **Syslinux 
 - quite simple initramfs structure
 - custom TUX logo
 - vi
-
-TODO:
 - ncurses
 - nano
 
