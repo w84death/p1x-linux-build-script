@@ -11,7 +11,7 @@ set -ex
 
 SCRIPT_NAME="P1X LiNUX BUiLD SCRiPT"
 SCRIPT_VERSION="2018.6"
-DISTRIBUTION_VERSION="1.0 RC8"
+DISTRIBUTION_VERSION="1.0 RC9"
 KERNEL_VERSION="4.14.39"
 BUSYBOX_VERSION="1.28.3"
 SYSLINUX_VERSION="6.03"
@@ -110,7 +110,7 @@ build_busybox() {
 
 create_etc_files () {
         cat > ${DESTDIR}/etc/passwd << 'EOF' &&
-root:x:0:0:root:/root:/bin/sh
+root::0:0:root:/root:/bin/sh
 EOF
 
         cat > ${DESTDIR}/etc/group << 'EOF' &&
