@@ -38,7 +38,7 @@ Around **1.5GiB** free space.
 
 For Debian/Ubuntu you'll need
 
-    sudo apt-get install wget bc build-essential gawk xorriso dialog qemu texinfo
+    sudo apt-get install wget bc build-essential gawk xorriso dialog qemu texinfo libncurses5-dev libncursesw5-dev
 
 Then just run the script
 
