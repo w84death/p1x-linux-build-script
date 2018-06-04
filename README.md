@@ -2,7 +2,7 @@
 
 ## About
 
-This scripts generates working Linux ISO image (7.8MiB). It is very, very small and basic.
+This scripts generates working Linux ISO image (<10MiB). It is very, very small and basic.
 
 The script below uses:
 
@@ -12,13 +12,16 @@ The script below uses:
 
 ## Linux
 
+### Base
 - Linux kernel
 - GNU C library compiled with default options
 - BusyBox compiled with default options
 - quite simple initramfs structure
 - custom TUX logo
 - vi
-- ncurses
+
+### Extra software
+- curses
 - nano
 
 ## Media
